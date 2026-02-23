@@ -1,0 +1,21 @@
+# Web Dashboard
+streamlit==1.54.0
+
+# Data Manipulation
+pandas==2.3.3
+
+# Data Visualization
+plotly==6.5.2
+
+# Financial Data & Scraping
+finance-datareader==0.9.102
+pykrx==1.2.4
+yfinance==1.2.0
+
+# HTML Parsing (pandas.read_html용)
+beautifulsoup4==4.14.3
+lxml==6.0.2
+
+# Elasticsearch
+elasticsearch==8.19.3
+elasticsearch-dsl==8.18.0
