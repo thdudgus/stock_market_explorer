@@ -1,61 +1,53 @@
 from datetime import datetime
 from elasticsearch import Elasticsearch
 from elasticsearch_dsl import Search
+from sentence_transformers import SentenceTransformer
 
 ES_HOST = 'http://localhost:9200'
 
-def get_client():
-    """Elasticsearch 클라이언트 생성"""
-    return Elasticsearch(ES_HOST, request_timeout=30)
+# AI 모델은 전역으로 한 번만 로드하여 검색 속도 향상
+embedding_model = SentenceTransformer('snunlp/KR-SBERT-V40K-klueNLI-augSTS')
 
+def get_client():
+    return Elasticsearch(ES_HOST, request_timeout=30)
 
 def search_index(index_name, field_name, match_name, max_results=100):
     """
-    인덱스에서 필드 기반 검색 수행
-
-    Args:
-        index_name: 검색할 인덱스명
-        field_name: 검색할 필드명
-        match_name: 검색어
-        max_results: 최대 결과 수 (기본 100)
-
-    Returns:
-        검색 결과 Response 객체
+    기존의 키워드 기반 정확도 검색 수행
     """
     client = get_client()
-    s = Search(index=index_name).using(client)
-    s = s.query("multi_match", fields=field_name, query=match_name)
-    s = s[:max_results]
+    s = Search(using=client, index=index_name)
+    
+    # 검색 필드가 여러 개일 경우 (리스트 형태)
+    if isinstance(field_name, list):
+        s = s.query("multi_match", query=match_name, fields=field_name)
+    # 단일 필드일 경우
+    else:
+        s = s.query("match", **{field_name: match_name})
+        
+    s = s.extra(size=max_results)
     response = s.execute()
+    
     return response
 
-
-def search_index_with_date_range(index_name, field_name, match_name, start_date, end_date, max_results=100):
+def semantic_search(index_name, query_text, max_results=50):
     """
-    날짜 범위와 함께 인덱스 검색 수행
-
-    Args:
-        index_name: 검색할 인덱스명
-        field_name: 검색할 필드명
-        match_name: 검색어
-        start_date: 시작 날짜
-        end_date: 종료 날짜
-        max_results: 최대 결과 수 (기본 100)
-
-    Returns:
-        검색 결과 Response 객체
+    의미 기반 통합 검색 (Vector Search) 수행
     """
     client = get_client()
-    s = Search(index=index_name).using(client)
-    s = s.query("multi_match", fields=field_name, query=match_name)
-    s = s.filter('range', 상장일={'gte': start_date, 'lte': end_date})
-    s = s[:max_results]
-    response = s.execute()
+    
+    # 1. 사용자의 검색어를 벡터로 변환
+    query_vector = embedding_model.encode(query_text).tolist()
+    
+    # 2. Elasticsearch 8.x의 kNN 검색 실행
+    response = client.search(
+        index=index_name,
+        knn={
+            "field": "text_vector",
+            "query_vector": query_vector,
+            "k": max_results,
+            "num_candidates": 100
+        },
+        _source=["회사명", "종목코드", "시장구분", "업종", "주요제품", "상장일", "업종_리스트", "주요제품_리스트"] 
+    )
     return response
-
-
-def get_all_indices():
-    """사용 가능한 모든 인덱스 목록 조회"""
-    client = get_client()
-    return list(client.indices.get_alias(index="*").keys())
-

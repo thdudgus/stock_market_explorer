@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from elastic_api import search_index
+from elastic_api import search_index, semantic_search
 from stock_utils import get_stock_price_data, get_market_index, get_today_market_ranking, get_stock_volume_rank
 
 st.set_page_config(page_title="주식 탐색 스캐너", page_icon="📈", layout="wide")
@@ -17,12 +17,22 @@ if 'page_number' not in st.session_state:
 st.title("주식 탐색 스캐너")
 
 # 상단 검색 영역
+# 🌟 상단 검색 모드 선택
 st.markdown("### 종목 및 테마 검색")
-search_field = st.radio("검색 기준", ["회사명", "종목코드", "업종", "주요제품"], horizontal=True)
+search_mode = st.radio("검색 모드 선택", ["키워드 검색 (정확도 우선)", "의미 기반 통합검색 (문맥 우선)"], horizontal=True)
+
+if search_mode == "키워드 검색 (정확도 우선)":
+    search_field = st.radio("검색 기준", ["회사명", "종목코드", "업종", "주요제품"], horizontal=True)
+    st.info("💡 키워드 기반으로 입력해보세요!")
+    placeholder_text = "예: 삼성전자"
+else:
+    search_field = None
+    st.info("💡 '전기차 배터리 관련주', '여름철 냉방', '인공지능 소프트웨어' 처럼 자연스럽게 입력해보세요!")
+    placeholder_text = "관심 있는 테마나 문장을 자유롭게 입력하세요"
 
 col_search1, col_search2 = st.columns([5, 1])
 with col_search1:
-    search_query = st.text_input("검색어를 입력하세요", placeholder="예: 삼성전자", label_visibility="collapsed")
+    search_query = st.text_input("검색어를 입력하세요", placeholder=placeholder_text, label_visibility="collapsed")
 with col_search2:
     search_btn = st.button("검색 실행", use_container_width=True)
 
@@ -30,9 +40,15 @@ if search_btn and search_query:
     with st.spinner("데이터를 조회 중입니다..."):
         st.session_state.selected_company = None 
         st.session_state.page_number = 0 
-        result = search_index("stock_info", search_field, search_query, 100)
-        st.session_state.search_results = result.to_dict()["hits"]["hits"]
         
+        # 🌟 모드에 따른 검색 로직 분기
+        if search_mode == "📌 키워드 검색 (정확도 우선)":
+            result = search_index("stock_info", search_field, search_query, 100)
+            st.session_state.search_results = result.to_dict()["hits"]["hits"]
+        else:
+            result = semantic_search("stock_info", search_query, 50)
+            st.session_state.search_results = result["hits"]["hits"] # kNN 응답 구조에 맞게 파싱
+            
     if not st.session_state.search_results:
         st.warning("⚠️ 일치하는 검색 결과가 없습니다.")
 
